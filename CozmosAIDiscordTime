@@ -1,0 +1,164 @@
+function sendEmailToDiscord() {
+  try {
+    var discordLabel = GmailApp.getUserLabelByName("Discord");
+    var processedLabel = GmailApp.getUserLabelByName("Processed");
+
+    if (!discordLabel) {
+      Logger.log("Label 'Discord' not found.");
+      return;
+    }
+    if (!processedLabel) {
+      Logger.log("Label 'Processed' not found. Creating 'Processed' label.");
+      processedLabel = GmailApp.createLabel("Processed");
+    }
+
+    Logger.log("Labels 'Discord' and 'Processed' found.");
+
+    var threads = discordLabel.getThreads(0, 50); // Check more threads for testing
+    Logger.log("Number of threads found with 'Discord' label: " + threads.length);
+
+    if (threads.length === 0) {
+      Logger.log("No threads found with the 'Discord' label.");
+      return;
+    }
+
+    for (var i = 0; i < threads.length; i++) {
+      var thread = threads[i];
+
+      // Check if the thread already has the 'Processed' label
+      var labels = thread.getLabels();
+      var hasProcessedLabel = labels.some(function(label) {
+        return label.getName() === "Processed";
+      });
+
+      if (hasProcessedLabel) {
+        Logger.log("Skipping already processed thread: " + thread.getFirstMessageSubject());
+        continue;
+      }
+
+      Logger.log("Processing thread: " + thread.getFirstMessageSubject());
+
+      var messages = thread.getMessages();
+      Logger.log("Number of messages in thread: " + messages.length);
+
+      for (var j = 0; j < messages.length; j++) {
+        var message = messages[j];
+
+        var subject = message.getSubject();
+        var body = message.getPlainBody();
+        var from = message.getFrom();
+
+        // Add logging to check the sender's email
+        Logger.log("Email from: " + from);
+
+        // Combine subject and the first 200 characters of the body
+        var preview = body.length > 200 ? body.substring(0, 200) + "..." : body;
+        var content = "Subject: " + subject + "\n\nAI-EXCHANGE: CozmosAI-V3: " + preview;
+
+        // Define the static subject line to include
+        var staticSubjectLine = "AI-EXCHANGE: CozmosAI-V3: ";
+        
+        // Prepend the static subject line to the content
+        var finalContent = staticSubjectLine + content;
+
+        // Ensure content is within 2000 characters limit
+        if (finalContent.length > 2000) {
+          finalContent = finalContent.substring(0, 1997) + "...";
+        }
+
+        // Add logging to check content
+        Logger.log("Content to send: " + finalContent);
+
+        var payload = {
+          "content": finalContent
+        };
+
+        var options = {
+          "method": "post",
+          "contentType": "application/json",
+          "payload": JSON.stringify(payload),
+          "muteHttpExceptions": true
+        };
+
+        var webhookUrl = "https://discord.com/api/webhooks/1243270639016738967/syKEBerX1q9-LDL4AV8_X6FoNjyIkOaXcLEO-fI-i19mzc5lqmt6SYnBV8zrbCGgz6P3";
+
+        // Add logging
+        Logger.log("Sending message to Discord: " + JSON.stringify(payload));
+        Logger.log("Webhook URL: " + webhookUrl);
+
+        try {
+          var response = UrlFetchApp.fetch(webhookUrl, options);
+          Logger.log("Response code from Discord: " + response.getResponseCode());
+          Logger.log("Response from Discord: " + response.getContentText());
+
+          if (response.getResponseCode() === 204) {
+            Logger.log("Message successfully sent to Discord.");
+          } else {
+            Logger.log("Failed to send message to Discord.");
+          }
+        } catch (e) {
+          Logger.log("Error sending message to Discord: " + e.toString());
+        }
+      }
+
+      // Add the 'Processed' label and remove the 'Discord' label after sending to avoid duplication
+      Logger.log("Adding 'Processed' label to thread: " + thread.getFirstMessageSubject());
+      thread.addLabel(processedLabel);
+      Logger.log("Removing 'Discord' label from thread: " + thread.getFirstMessageSubject());
+      thread.removeLabel(discordLabel);
+    }
+  } catch (e) {
+    Logger.log("Error in sendEmailToDiscord function: " + e.toString());
+  }
+}
+
+function enableMainScript() {
+  // First, delete any existing trigger for the main script to avoid duplicates
+  deleteTrigger('sendEmailToDiscord');
+
+  // Create a new trigger to run the main script at specific intervals (e.g., every 5 minutes)
+  ScriptApp.newTrigger('sendEmailToDiscord')
+           .timeBased()
+           .everyMinutes(5)
+           .create();
+}
+
+function disableMainScript() {
+  // Delete the trigger for the main script
+  deleteTrigger('sendEmailToDiscord');
+}
+
+// Helper function to delete a specific trigger by function name
+function deleteTrigger(functionName) {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const trigger of triggers) {
+    if (trigger.getHandlerFunction() === functionName) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  }
+}
+
+// Initial setup function to create enable/disable triggers
+function setupEnableDisableTriggers() {
+  // Delete any existing enable/disable triggers to avoid duplicates
+  deleteTrigger('enableMainScript');
+  deleteTrigger('disableMainScript');
+
+  // Create a new trigger to enable the main script at 6:00 AM
+  ScriptApp.newTrigger('enableMainScript')
+           .timeBased()
+           .atHour(6)
+           .everyDays(1)
+           .create();
+
+  // Create a new trigger to disable the main script at 1:30 PM
+  ScriptApp.newTrigger('disableMainScript')
+           .timeBased()
+           .atHour(13)
+           .nearMinute(30)
+           .everyDays(1)
+           .create();
+}
+
+// Run this function once to set up the enable/disable triggers
+setupEnableDisableTriggers();
