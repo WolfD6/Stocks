@@ -1,0 +1,124 @@
+function sendEmailToDiscord() {
+  try {
+    var discordLabel = GmailApp.getUserLabelByName("Discord");
+    var processedLabel = GmailApp.getUserLabelByName("Processed");
+
+    if (!discordLabel) {
+      Logger.log("Label 'Discord' not found.");
+      return;
+    }
+    if (!processedLabel) {
+      Logger.log("Label 'Processed' not found. Creating 'Processed' label.");
+      processedLabel = GmailApp.createLabel("Processed");
+    }
+
+    Logger.log("Labels 'Discord' and 'Processed' found.");
+
+    // Fetch threads with the 'Discord' label
+    var threads = discordLabel.getThreads(0, 50); // Check more threads for testing
+    Logger.log("Number of threads found with 'Discord' label: " + threads.length);
+
+    if (threads.length === 0) {
+      Logger.log("No threads found with the 'Discord' label.");
+      return;
+    }
+
+    for (var i = 0; i < threads.length; i++) {
+      var thread = threads[i];
+
+      // Check if the thread already has the 'Processed' label
+      var labels = thread.getLabels();
+      var hasProcessedLabel = labels.some(function(label) {
+        return label.getName() === "Processed";
+      });
+
+      if (hasProcessedLabel) {
+        Logger.log("Skipping already processed thread: " + thread.getFirstMessageSubject());
+        continue;
+      }
+
+      Logger.log("Processing thread: " + thread.getFirstMessageSubject());
+
+      var messages = thread.getMessages();
+      Logger.log("Number of messages in thread: " + messages.length);
+
+      for (var j = 0; j < messages.length; j++) {
+        var message = messages[j];
+
+        var subject = message.getSubject();
+        var body = message.getPlainBody();
+        var from = message.getFrom();
+
+        // Add logging to check the sender's email
+        Logger.log("Email from: " + from);
+
+        // Combine subject and the first 100 characters of the body
+        var preview = body.length > 100 ? body.substring(0, 100) + "..." : body;
+        var content = "Subject: " + subject + "\n\nPreview: " + preview;
+
+        // Add logging to check content
+        Logger.log("Content to send: " + content);
+
+        var payload = {
+          "content": content
+        };
+
+        var options = {
+          "method": "post",
+          "contentType": "application/json",
+          "payload": JSON.stringify(payload),
+          "muteHttpExceptions": true
+        };
+
+        var webhookUrl = "https://discord.com/api/ENTER YOUR WEBHOOK ON THIS LINE OR IT WILL NOT FUNCTION";
+
+        // Add logging
+        Logger.log("Sending message to Discord: " + JSON.stringify(payload));
+        Logger.log("Webhook URL: " + webhookUrl);
+
+        try {
+          var response = UrlFetchApp.fetch(webhookUrl, options);
+          Logger.log("Response code from Discord: " + response.getResponseCode());
+          Logger.log("Response from Discord: " + response.getContentText());
+
+          if (response.getResponseCode() === 204) {
+            Logger.log("Message successfully sent to Discord.");
+          } else {
+            Logger.log("Failed to send message to Discord.");
+          }
+        } catch (e) {
+          Logger.log("Error sending message to Discord: " + e.toString());
+        }
+      }
+
+      // Add the 'Processed' label and remove the 'Discord' label after sending to avoid duplication
+      Logger.log("Adding 'Processed' label to thread: " + thread.getFirstMessageSubject());
+      thread.addLabel(processedLabel);
+      Logger.log("Removing 'Discord' label from thread: " + thread.getFirstMessageSubject());
+      thread.removeLabel(discordLabel);
+    }
+  } catch (e) {
+    Logger.log("Error in sendEmailToDiscord function: " + e.toString());
+  }
+}
+
+function setTrigger() {
+  try {
+    // Remove existing triggers for this function to avoid duplicates
+    var existingTriggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < existingTriggers.length; i++) {
+      if (existingTriggers[i].getHandlerFunction() === "sendEmailToDiscord") {
+        ScriptApp.deleteTrigger(existingTriggers[i]);
+      }
+    }
+
+    // Create a new time-based trigger
+    ScriptApp.newTrigger("sendEmailToDiscord")
+             .timeBased()
+             .everyMinutes(5) // Adjust the frequency to 5 minutes
+             .create();
+    Logger.log("Trigger set to run every 5 minutes.");
+  } catch (e) {
+    Logger.log("Error setting trigger: " + e.toString());
+  }
+}
